@@ -1,3 +1,318 @@
 ﻿@page "/"
-<h1>Nudge</h1>
+@using System.Globalization
+@inject AppState S
+
+<PageTitle>Nudge: invoices that get paid</PageTitle>
+
+@{
+    var b = S.Billing;
+    var invoices = b.Invoices();
+    var open = invoices.Where(i => i.IsOpen).ToList();
+    var overdue = open.Where(i => i.IsOverdue(b.Today)).ToList();
+    var clients = b.Clients();
+    var clientName = clients.ToDictionary(c => c.Id, c => c.Name);
+}
+
+<header class="top">
+    <div>
+        <h1>Nudge</h1>
+        <p class="tag">Invoices that get paid: polite at first, firm when it matters, and never twice for the same step.</p>
+    </div>
+    <dl class="stats">
+        <div><dt>Outstanding</dt><dd>@Billing.Money(open.Sum(i => i.BalanceCents))</dd></div>
+        <div><dt>Overdue</dt><dd>@Billing.Money(overdue.Sum(i => i.BalanceCents))</dd></div>
+        <div><dt>Open invoices</dt><dd>@open.Count</dd></div>
+        <div><dt>Today</dt><dd>@b.Today.ToString("MMM d", CultureInfo.InvariantCulture)</dd></div>
+    </dl>
+</header>
+
+<main>
+    <section class="guide" aria-label="How to try it">
+        <h2>Try this (3 minutes)</h2>
+        <ol>
+            <li><b>Invoices:</b> several are already overdue. Press <b>+1 week</b> and watch the status and the reminders escalate from friendly to final notice. A late fee is added once, never twice.</li>
+            <li>On an overdue invoice press <b>Pay in full</b>. Then press <b>Retry the same payment</b>: the provider's repeated event is recognized and counted once. Try <b>Pay 150%</b> too: an overpayment is refused.</li>
+            <li><b>Reminders:</b> take the <b>mail server down</b>, move a day, and watch sends retry after 5 minutes and then 30 before giving up.</li>
+            <li>Press <b>Disputed</b> on an invoice: reminders and late fees stop until the dispute is cleared.</li>
+            <li><b>Reports:</b> the aging report and an 8-week cash forecast update as you go.</li>
+        </ol>
+    </section>
+
+    @if (S.Message.Length > 0)
+    {
+        <div class="toast @(S.MessageOk ? "ok" : "bad")" role="status">@S.Message</div>
+    }
+
+    <section class="card">
+        <div class="actions wrap">
+            <button class="btn" @onclick="() => S.Wait(TimeSpan.FromDays(1))">+1 day</button>
+            <button class="btn primary" @onclick="() => S.Wait(TimeSpan.FromDays(7))">+1 week</button>
+            <button class="btn" @onclick="() => S.Wait(TimeSpan.FromDays(30))">+1 month</button>
+            <button class="btn" @onclick="RunNow">Run the daily job now</button>
+            <button class="btn ghost" @onclick="S.Reset">Reset demo</button>
+        </div>
+        <label class="check"><input type="checkbox" checked="@S.AutoRun" @onchange="e => S.AutoRun = (bool)(e.Value ?? false)" /> Run the daily job every night (late fees, reminders, emails)</label>
+        <p class="hint">Time only moves when you press a button. Reminders go out on days -3, 0, +3, +7 and +14 from the due date. If you skip ahead and miss steps, only the latest is sent.</p>
+    </section>
+
+    <nav class="tabs" aria-label="Sections">
+        @foreach (var t in new[] { "Invoices", "New invoice", "Reminders", "Reports" })
+        {
+            var name = t;
+            <button class="tab @(_tab == name ? "on" : "")" @onclick="() => _tab = name">@name</button>
+        }
+    </nav>
+
+    @if (_tab == "Invoices")
+    {
+        <section class="card">
+            <div class="tablewrap">
+                <table>
+                    <thead><tr><th>Invoice</th><th>Client</th><th>Total</th><th>Balance</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        @foreach (var i in invoices.OrderByDescending(i => i.Number))
+                        {
+                            var id = i.Id;
+                            var days = i.DaysPastDue(b.Today);
+                            <tr>
+                                <td><b>@i.Number</b></td>
+                                <td>@clientName[i.ClientId]</td>
+                                <td class="mono">@Billing.Money(i.TotalCents)@(i.LateFeeCents > 0 ? " (incl. " + Billing.Money(i.LateFeeCents) + " late fee)" : "")</td>
+                                <td class="mono">@Billing.Money(i.BalanceCents)</td>
+                                <td class="mono">@(i.DueOn?.ToString("MMM d", CultureInfo.InvariantCulture) ?? "-")</td>
+                                <td>
+                                    <span class="chip @StatusClass(i, days)">@StatusLabel(i, days)</span>
+                                    @if (i.Disputed) { <span class="chip st-disputed">Disputed</span> }
+                                </td>
+                                <td class="detail">
+                                    @if (i.Status == InvoiceStatus.Draft)
+                                    {
+                                        <button class="btn small primary" @onclick="() => Send(id)">Send</button>
+                                    }
+                                    else if (i.IsOpen)
+                                    {
+                                        <button class="btn small primary" @onclick="() => S.Pay(id, i.BalanceCents)">Pay in full</button>
+                                        <button class="btn small" @onclick="() => S.Pay(id, i.BalanceCents / 2)">Pay 50%</button>
+                                        <button class="btn small" @onclick="() => S.Pay(id, i.BalanceCents * 3 / 2)">Pay 150%</button>
+                                        <button class="btn small ghost" @onclick="() => Dispute(id, !i.Disputed)">@(i.Disputed ? "Clear dispute" : "Disputed")</button>
+                                        <button class="btn small ghost" @onclick="() => Void(id)">Void</button>
+                                    }
+                                    @if (S.CanRetry(id))
+                                    {
+                                        <button class="btn small" @onclick="() => S.RetryLastPayment(id)">Retry the same payment</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+    else if (_tab == "New invoice")
+    {
+        <section class="card narrow">
+            <h2>New invoice</h2>
+            <div class="selects">
+                <label>Client
+                    <select @bind="_client">
+                        @foreach (var c in clients)
+                        {
+                            <option value="@c.Id">@c.Name (net @c.TermsDays)</option>
+                        }
+                    </select>
+                </label>
+                <label>Description<input @bind="_description" /></label>
+                <label>Quantity<input type="number" @bind="_quantity" /></label>
+                <label>Price each ($)<input type="number" @bind="_price" /></label>
+                <label>Tax (%)<input type="number" step="0.25" @bind="_tax" /></label>
+            </div>
+            <div class="actions">
+                <button class="btn primary" @onclick="() => Create(true)">Create and send</button>
+                <button class="btn" @onclick="() => Create(false)">Save as draft</button>
+            </div>
+            <p class="hint">Tax is rounded half up to the cent. The due date is the send date plus the client's payment terms.</p>
+        </section>
+    }
+    else if (_tab == "Reminders")
+    {
+        <section class="card">
+            <div class="clockrow">
+                <div>
+                    <div class="lab">Outgoing mail server</div>
+                    <div class="clock">@S.Mail.Mode</div>
+                </div>
+                <span class="pill @(S.Mail.Mode == MailMode.Up ? "up" : "down")">@(S.Mail.Mode == MailMode.Up ? "Sending" : "Refusing mail")</span>
+            </div>
+            <div class="actions wrap">
+                <button class="btn @(S.Mail.Mode == MailMode.Down ? "primary" : "")" @onclick="ToggleMail">@(S.Mail.Mode == MailMode.Up ? "Take the mail server down" : "Bring it back")</button>
+                <button class="btn" @onclick="SendNow">Send queued emails now</button>
+            </div>
+            <p class="hint">@S.Mail.Sent.Count email(s) delivered so far. A failed send is retried after 5 minutes, then 30, then marked failed.</p>
+        </section>
+
+        <section class="card">
+            <h2>Reminder log</h2>
+            <div class="tablewrap">
+                <table>
+                    <thead><tr><th>When</th><th>Invoice</th><th>Step</th><th>Status</th><th>Message</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in b.Reminders().OrderByDescending(r => r.CreatedAt).ThenByDescending(r => r.StepIndex).Take(40))
+                        {
+                            var inv = b.Invoice(r.InvoiceId)!;
+                            <tr>
+                                <td class="mono">@r.CreatedAt.UtcDateTime.ToString("MMM d", CultureInfo.InvariantCulture)</td>
+                                <td>@inv.Number</td>
+                                <td><span class="chip tone-@r.Tone.ToString().ToLowerInvariant()">@r.Tone</span></td>
+                                <td><span class="chip rs-@r.Status.ToString().ToLowerInvariant()">@r.Status</span>@(r.Attempts > 0 ? $" ({r.Attempts} tries)" : "")</td>
+                                <td class="detail">@(r.Status == ReminderStatus.Skipped ? r.Error : r.Subject)@(r.Status != ReminderStatus.Skipped && r.Error is not null ? " (" + r.Error + ")" : "")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+    else
+    {
+        var aging = b.Aging();
+        var max = Math.Max(1, aging.Max(a => a.BalanceCents));
+        var forecast = b.Forecast(8);
+        var maxWeek = Math.Max(1, forecast.Max(w => w.BalanceCents));
+        <div class="two">
+            <section class="card">
+                <h2>Aging report</h2>
+                @foreach (var a in aging)
+                {
+                    <div class="month"><span>@a.Label</span><span class="bar big @(a.Label == "Not yet due" ? "" : "late")"><i style="width:@(a.BalanceCents * 100 / max)%"></i></span><span class="mono">@Billing.Money(a.BalanceCents)</span></div>
+                }
+                <p class="hint">What is still owed, by how late it is.</p>
+            </section>
+            <section class="card">
+                <h2>Expected in, next 8 weeks</h2>
+                @foreach (var w in forecast)
+                {
+                    <div class="month"><span class="mono">@w.WeekStart.ToString("MMM d", CultureInfo.InvariantCulture)</span><span class="bar big"><i style="width:@(w.BalanceCents * 100 / maxWeek)%"></i></span><span class="mono">@Billing.Money(w.BalanceCents)</span></div>
+                }
+                <p class="hint">By the week each open balance falls due. Anything already late counts in the current week.</p>
+            </section>
+        </div>
+
+        <section class="card">
+            <h2>By client</h2>
+            <div class="tablewrap">
+                <table>
+                    <thead><tr><th>Client</th><th>Open</th><th>Outstanding</th><th>Overdue</th><th>Reminders</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in b.ClientSummaries())
+                        {
+                            var cid = c.ClientId;
+                            var paused = clients.First(x => x.Id == cid).RemindersPaused;
+                            <tr>
+                                <td><b>@c.Name</b></td>
+                                <td class="mono">@c.OpenInvoices</td>
+                                <td class="mono">@Billing.Money(c.OutstandingCents)</td>
+                                <td class="mono @(c.OverdueCents > 0 ? "bad" : "")">@Billing.Money(c.OverdueCents)</td>
+                                <td><button class="btn small @(paused ? "primary" : "")" @onclick="() => TogglePause(cid, !paused)">@(paused ? "Paused: resume" : "Pause")</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+</main>
+
+<footer class="foot">
+    <span>C# engine, 93 tests. The same code runs in your browser with Blazor WebAssembly.</span>
+    <a href="https://github.com/hamzamehmood46/invoice-reminders-dotnet">Source on GitHub</a>
+</footer>
+
+@code {
+    private string _tab = "Invoices";
+    private Guid _client;
+    private string _description = "Consulting";
+    private int _quantity = 10;
+    private decimal _price = 150;
+    private decimal _tax = 8.25m;
+
+    protected override void OnInitialized() => _client = S.Billing.Clients().First().Id;
+
+    private static string StatusLabel(Invoice i, int days) => i.Status switch
+    {
+        InvoiceStatus.Sent when days > 0 => $"Overdue {days}d",
+        InvoiceStatus.PartiallyPaid when days > 0 => $"Part paid, overdue {days}d",
+        InvoiceStatus.PartiallyPaid => "Part paid",
+        _ => i.Status.ToString(),
+    };
+
+    private static string StatusClass(Invoice i, int days) => i.Status switch
+    {
+        InvoiceStatus.Paid => "s-succeeded",
+        InvoiceStatus.Void or InvoiceStatus.Draft => "s-skipped",
+        _ when days > 0 => "s-deadlettered",
+        _ => "s-running",
+    };
+
+    private void RunNow()
+    {
+        S.DailyJob();
+        S.Say("Ran the daily job: late fees, reminders and emails.");
+    }
+
+    private void Send(Guid id)
+    {
+        var result = S.Billing.Send(id);
+        S.Say(result.Message, result.Ok);
+    }
+
+    private void Void(Guid id)
+    {
+        var result = S.Billing.Void(id);
+        S.Say(result.Message, result.Ok);
+    }
+
+    private void Dispute(Guid id, bool disputed)
+    {
+        var result = S.Billing.SetDisputed(id, disputed);
+        S.Say(result.Message, result.Ok);
+    }
+
+    private void TogglePause(Guid id, bool paused)
+    {
+        S.Billing.PauseReminders(id, paused);
+        S.Say(paused ? "Reminders paused for this client." : "Reminders resumed.");
+    }
+
+    private void ToggleMail()
+    {
+        S.Mail.Mode = S.Mail.Mode == MailMode.Up ? MailMode.Down : MailMode.Up;
+        S.Say(S.Mail.Mode == MailMode.Down ? "The mail server is down." : "The mail server is back.", S.Mail.Mode == MailMode.Up);
+    }
+
+    private void SendNow()
+    {
+        var sent = S.Billing.SendEmails(S.Mail);
+        S.Say($"Sent {sent} email(s).", true);
+    }
+
+    private void Create(bool send)
+    {
+        var created = S.Billing.CreateInvoice(_client, [new InvoiceLine(_description, _quantity, (long)Math.Round(_price * 100))], (int)Math.Round(_tax * 100));
+        if (!created.Ok)
+        {
+            S.Say(created.Message, false);
+            return;
+        }
+
+        if (send)
+        {
+            var id = S.Billing.Invoices().Single(i => i.Number == created.Message).Id;
+            S.Billing.Send(id);
+        }
+
+        S.Say(send ? $"{created.Message} created and sent." : $"{created.Message} saved as a draft.");
+        _tab = "Invoices";
+    }
+}
 

@@ -145,3 +145,32 @@ main>*,.layout>*{min-width:0}
 .lost{grid-template-columns:minmax(0,1fr) auto}
 .lost input{min-width:0}
 .deal .actions .btn{flex:0 1 auto}
+
+.tabs{display:flex;gap:8px;flex-wrap:wrap}
+.tab{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:.5rem 1.1rem;font-weight:600;min-height:44px}
+.tab.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.toast{border-radius:12px;padding:.65rem 1rem;border:1px solid;font-weight:600;overflow-wrap:anywhere}
+.toast.ok{color:var(--green);border-color:var(--green);background:rgba(91,224,143,.08)}
+.toast.bad{color:var(--red);border-color:var(--red);background:rgba(255,107,129,.08)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}
+.narrow{max-width:760px}
+.selects{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.check{display:flex;flex-direction:row;gap:10px;align-items:center;color:var(--txt2);font-size:.9rem;margin-top:10px}
+.check input{width:18px;height:18px;min-height:0;accent-color:var(--accent)}
+.bar{display:inline-block;height:10px;background:#0b121a;border-radius:6px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.bar.big{width:100%;flex:1}
+.bar.late i{background:var(--red)}
+.month{display:grid;grid-template-columns:110px 1fr 100px;gap:10px;align-items:center;margin:8px 0;font-size:.88rem}
+.st-disputed{color:var(--amber);border-color:var(--amber)}
+.tone-friendly,.tone-duetoday{color:var(--blue);border-color:var(--blue)}
+.tone-gentle{color:var(--amber);border-color:var(--amber)}
+.tone-firm,.tone-final{color:var(--red);border-color:var(--red)}
+.rs-sent{color:var(--green);border-color:var(--green)}
+.rs-queued{color:var(--amber);border-color:var(--amber)}
+.rs-failed{color:var(--red);border-color:var(--red)}
+.rs-skipped{color:var(--mut)}
+.ok{color:var(--green)}.bad{color:var(--red)}
+.detail{min-width:170px}
+.detail .btn{margin:2px 4px 2px 0}
+@media (max-width:520px){.month{grid-template-columns:80px 1fr 80px}}
