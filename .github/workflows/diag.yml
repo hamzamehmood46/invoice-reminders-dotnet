@@ -17,6 +17,10 @@ jobs:
           mkdir -p /tmp/out
           dotnet test tests/Nudge.Engine.Tests -c Release --logger "console;verbosity=normal" > /tmp/out/result.txt 2>&1 || true
           echo "sha: ${GITHUB_SHA}" >> /tmp/out/result.txt
+      - name: Mutation checks
+        run: |
+          python3 .ci/mutate.py tests/Nudge.Engine.Tests >> /tmp/out/result.txt 2>&1 || true
+          git checkout -- . || true
       - name: Publish the output to the ci-log branch
         run: |
           git config user.name ci
