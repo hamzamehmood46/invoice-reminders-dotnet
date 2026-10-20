@@ -253,7 +253,7 @@ public class EmailTests
         Assert.Equal(0, _s.Billing.SendEmails(_s.Mail));
 
         Assert.Single(_s.Mail.Sent);
-        Assert.Equal(ReminderStatus.Sent, _s.Reminders(id).Single().Status);
+        Assert.Equal(ReminderStatus.Sent, _s.Reminders(id).Single(r => r.Tone == Tone.Gentle).Status);
         Assert.Equal("ap@acme.com", _s.Mail.Sent[0].To);
     }
 
@@ -264,23 +264,23 @@ public class EmailTests
         _s.Mail.Mode = MailMode.Down;
 
         _s.Billing.SendEmails(_s.Mail);
-        var first = _s.Reminders(id).Single();
+        var first = _s.Reminders(id).Single(r => r.Tone == Tone.Gentle);
         Assert.Equal(1, first.Attempts);
         Assert.Equal(_s.Clock.GetUtcNow().AddMinutes(5), first.NextAttemptAt);
 
         _s.Clock.Advance(TimeSpan.FromMinutes(4));
         _s.Billing.SendEmails(_s.Mail);
-        Assert.Equal(1, _s.Reminders(id).Single().Attempts);
+        Assert.Equal(1, _s.Reminders(id).Single(r => r.Tone == Tone.Gentle).Attempts);
 
         _s.Clock.Advance(TimeSpan.FromMinutes(1));
         _s.Billing.SendEmails(_s.Mail);
-        var second = _s.Reminders(id).Single();
+        var second = _s.Reminders(id).Single(r => r.Tone == Tone.Gentle);
         Assert.Equal(2, second.Attempts);
         Assert.Equal(_s.Clock.GetUtcNow().AddMinutes(30), second.NextAttemptAt);
 
         _s.Clock.Advance(TimeSpan.FromMinutes(30));
         _s.Billing.SendEmails(_s.Mail);
-        var last = _s.Reminders(id).Single();
+        var last = _s.Reminders(id).Single(r => r.Tone == Tone.Gentle);
         Assert.Equal(ReminderStatus.Failed, last.Status);
         Assert.Equal(3, last.Attempts);
         Assert.Contains("not answering", last.Error);
@@ -297,7 +297,7 @@ public class EmailTests
 
         _s.Billing.SendEmails(_s.Mail);
 
-        Assert.Equal(ReminderStatus.Sent, _s.Reminders(id).Single().Status);
+        Assert.Equal(ReminderStatus.Sent, _s.Reminders(id).Single(r => r.Tone == Tone.Gentle).Status);
         Assert.Single(_s.Mail.Sent);
     }
 
@@ -310,7 +310,7 @@ public class EmailTests
         Assert.Equal(0, _s.Billing.SendEmails(_s.Mail));
 
         Assert.Empty(_s.Mail.Sent);
-        Assert.Equal(ReminderStatus.Skipped, _s.Reminders(id).Single().Status);
+        Assert.Equal(ReminderStatus.Skipped, _s.Reminders(id).Single(r => r.Tone == Tone.Gentle).Status);
     }
 
     [Fact]
